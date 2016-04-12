@@ -1,0 +1,178 @@
+#!/bin/bash
+#
+# pushPrxy - A script to send a RobotProxy certificate to a given
+#            endpoint. This script retrieves the proxy from the
+#            eTokenServer, determine its md5sum, store the proxy
+#            in a given directory and send it to the given endpoint
+#            The script produce also err and out files with info
+#            related to the scrpt execution and the proxy too.
+#            This script could be executed via a cron job.
+#
+# Author: Riccardo Bruno <riccardo.bruno@ct.infn.it>
+#
+STORED_PXYDIR=/home/rbruno/proxies # This directory contains history of proxyies with out and err files while generating them
+ENDPOINTS="
+http://90.147.170.168:31491/orchestrator/proxy
+http://90.147.170.152:80/orchestrator/proxy
+"
+PXY_REQ="http://etokenserver2.ct.infn.it:8082/eTokenServer/eToken/bc779e33367eaad7882b9dfaa83a432c?voms=fedcloud.egi.eu:/fedcloud.egi.eu&proxy-renewal=true&disable-voms-proxy=false&rfc-proxy=true&cn-label=eToken:Empty" # Proxy request for the eTokenServer
+VOMS=fedcloud.egi.eu # Specify the VO in case the proxy is not taken from the eTokenServer but generated from personal certificate
+ENCODEPXY=0 # When not zero encodes proxy introducing '\n's characters
+USEETOKEN=1 # When not zero uses the eTokenServer
+DRYRUN=0 # When not zero the proxy will be not sent and curl call shown in the log
+
+ts() {
+  date +%Y%m%d%H%M%S
+}
+
+out() {
+  TS=$(ts)
+  echo "$TS $*" >> $OUT
+}
+
+err() {
+  TS=$(ts)
+  echo "$TS $*" >> $ERR
+}
+
+local_exec() {
+  OUTF=$(mktemp)
+  ERRF=$(mktemp)
+  $* >$OUTF 2>$ERRF
+  while read ln; do
+    out "$ln"
+  done < $OUTF
+  while read ln; do
+    err "$ln"
+  done < $ERRF
+  rm -f $OUTF
+  rm -f $ERRF
+}
+
+
+storeproxydir() {
+  if [ ! -d $STORED_PXYDIR ]; then
+    out "Creating store proxy dir"
+    mkdir -p $STORED_PXYDIR >>$OUT 2>>$ERR
+    RES=$?
+    if [ $RES -ne 0 ]; then
+      err "Error creating store proxy dir"
+      return 1
+    fi
+  fi
+  return 0
+}
+
+getproxyfile() {
+  if [ $USEETOKEN -ne 0 ]; then
+    out "Using eTokenserver"
+    wget "$PXY_REQ" -O $PXY >>$OUT 2>>$ERR
+    RES=$?
+    if [ $RES -eq 0 ]; then
+      out "Proxy successfully retrieved"
+    else
+      err "Proxy unsuccessfully retrieved"
+    fi
+  else
+    out "Using personal proxy"
+    if [ -f $X509_USER_PROXY ]; then
+      PXYTIMELEFT=$(voms-proxy-info --all | grep timeleft | tail -n 1 | awk '{ print $3 }' | xargs echo | awk -F":" '{ print $3+60*$2+3600*$1 }')
+      if [ $PXYTIMELEFT -ge $((3600*8)) ]; then
+        out "Using existing proxy; timeleft '"$PXYTIMELEFT"'"
+        RES=$?
+      else
+        out "Renewing proxy"
+        cat .globus/.vomspass 2>>$ERR | voms-proxy-init --voms $VOMS --rfc --pwstdin >>$OUT 2>>$ERR
+        RES=$?
+      fi
+    else
+      out "Creating a new proxy"
+      cat .globus/.vomspass 2>>$ERR | voms-proxy-init --voms $VOMS --rfc --pwstdin >>$OUT 2>>$ERR
+      RES=$?
+    fi
+    if [ $RES -eq 0 ]; then
+      cp $X509_USER_PROXY $PXY >>$OUT 2>>$ERR
+    fi
+  fi
+  return $RES
+}
+
+sendproxy()  {
+  MD5PXY=$(md5sum $PXY | awk '{ print $1}')
+  out "Proxy MD5SUM: '"$MD5PXY"'"
+  STORED_PXYFILE=$STORED_PXYFILE"_"$MD5PXY
+  if [ $ENCODEPXY -ne 0 ]; then
+    out "Encoding proxy"
+    ENCODED_PXYFILE=$(mktemp)
+    #ENCODED_PXY=`sed ':a;N;$!ba;s/\n/\\\\\\\\n/g' $PXY` # Original as German
+    ENCODED_PXY=`sed ':a;N;$!ba;s/\n/\\\\n/g' $PXY`
+    echo $ENCODED_PXY > $ENCODED_PXYFILE
+    ENCMD5PXY=$(md5sum $ENCODED_PXYFILE | awk '{ print $1}')
+    out "Encoded proxy MD5SUM: '"$ENCMD5PXY"'"
+    PXYFILE=$ENCODED_PXYFILE
+  else
+    out "Not encoding proxy"
+    PXYFILE=$PXY
+  fi
+  # SendProxies
+  CURLRES=0
+  for endpoint in $ENDPOINTS; do
+    SKIPCHAR=$(echo $endpoint | awk '{ print substr($1,1,1) }')
+    if [ "$SKIPCHAR" != "#" ]; then
+      out "Sending proxy to the endpoint: $endpoint"
+      #curl -v -X POST -H "Content-Type: text/html; charset=UTF-8" "file=@$PXYFILE" "$ENDPOINT" >>$OUT 2>>$ERR
+      if [ $DRYRUN -eq 0 ]; then
+        curl -v -X POST -F "file=@$PXYFILE" "$endpoint" >>$OUT 2>>$ERR
+        RES=$?
+        CURLRES=$((CURLRES+RES))
+        out "Curl exit code: $RES"
+        if [ $RES -ne 0 ]; then
+          out "Failed to send proxy to the endpoint: '"$endpoint"'"
+        else
+          out "Successfully pushed proxy to the endpoint: '"$endpoint"'"
+        fi
+      else
+        out "Curl call: curl -v -X POST -F \"file=@$PXYFILE\" \"$endpoint\""
+        RES=0
+      fi
+    else
+      SKIPPEDENDPOINT=$(echo $endpoint | awk '{ print substr($1,2) }')
+      out "Skipping endpoint: '"$SKIPPEDENDPOINT"'"
+    fi
+  done
+  if [ $ENCODEPXY -ne 0 ]; then
+    rm -f $ENCODED_PXYFILE
+  fi
+  if [ $CURLRES -ne 0 ]; then
+    out "One or more endpoints failed to receive proxy"
+    err "One or more endpoints failed to receive proxy"
+  else
+    out "All proxies sent successfully to the given endpoints"
+  fi
+  # Store the new proxy
+  cp $PXY $STORED_PXYFILE.pxy >>$OUT 2>>$ERR
+  export X509_USER_PROXY=$PXY
+  out "Getting proxy info"
+  local_exec "voms-proxy-info --all"
+  return 0
+}
+
+cleanup() {
+  cat $OUT > $STORED_PXYFILE.out
+  cat $ERR > $STORED_PXYFILE.err
+  rm -rf $OUT $ERR
+}
+
+#
+# Sending proxy ...
+#
+OUT=$(mktemp)
+ERR=$(mktemp)
+PXY=$HOME/pxy
+STORED_PXYFILE=$STORED_PXYDIR/$(ts)
+
+storeproxydir && \
+getproxyfile  && \
+sendproxy     && \
+cleanup
+
