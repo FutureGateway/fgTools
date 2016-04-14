@@ -3,6 +3,8 @@
 # updateCode - utility to update FutureGateway code on a given machine
 #
 FGUSER=futuregateway
+COPYFROM=
+COPYTO=
 APISERVERDAEMON_HOME=$HOME/Documents/APIServerDaemon
 APISERVERFRONTEND_HOME=$HOME/Documents/fgapiserver
 TOSCAADAPTOR_GIT="https://github.com/csgf/jsaga-adaptor-tosca"
@@ -30,11 +32,14 @@ updateCode - utility to update FutureGateway code on a given machine
 
 usage: updateCode  -h <ip|host>                 # FutureGateway host
                   [-p <ssh port>] (default 22)  # FutureGateway ssh port
-                   -c <fgAPIServer              # code: APIServer front-end
+                  [-c <fgAPIServer              # code: APIServer front-end
 				      |APIServerDaemon          # code: APIServerDaemon
 					  |jsaga-adaptor-rocci>     # code: rOCCI adaptor
-					  |jsaga-adaptor-tosca>     # code: tosca adaptor
-                  [-s ]                         # Start server
+					  |jsaga-adaptor-tosca> ]   # code: tosca adaptor
+                  [ -f <file/directory path>    # Local file/dir to copy
+				   [-t <destination dir> ]  ]   # $FGLOCATION/<file/dir> 
+                  [-s ]                         # Start futuregateway service
+
 
 This script copies the specified source package into remote host
 using ssh connection, for this reason is recommended to exchange
@@ -117,7 +122,7 @@ parse_options() {
 
   if [ "$SSH_HOST" != "" -a \
        "$SSH_PORT" != "" -a \
-       "$CODE"     != "" -o "$COPYFROM" != "" -o "$COPYTO" != ""   \
+       "$CODE"     != "" -o "$COPYFROM" != "" \
   ]; then
     out "SSH_HOST  : '"$SSH_HOST"'"
     out "SSH_PORT  : '"$SSH_PORT"'"
@@ -185,7 +190,7 @@ update_code() {
   if [ $STARTFGSERVER -ne 0 ]; then
    futuregateway_service start
   fi
-  if [ "$COPYFROM" != "" -a "$COPYTO" != "" ]; then
+  if [ "$COPYFROM" != "" ]; then
     out "Copying '"$COPYFROM"' to '"$FGLOCATION"/"$COPYTO"'"
     local_exec "scp -r -p -P$SSH_PORT $COPYFROM $FGUSER@$SSH_HOST:$FGLOCATION/$COPYTO"
   fi
