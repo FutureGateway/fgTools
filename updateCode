@@ -87,7 +87,7 @@ parse_options() {
   out "Parsing options and validating connection"
   SSH_PORT=22
   STARTFGSERVER=0
-  while getopts "h:p:c:s" opt >/dev/null 2>/dev/null
+  while getopts "h:p:c:sf:t:" opt >/dev/null 2>/dev/null
   do
     case $opt in
       h) 
@@ -102,6 +102,12 @@ parse_options() {
 	  s)
 		STARTFGSERVER=1
 		;;
+	  f)
+		COPYFROM=$OPTARG
+		;;
+	  t)
+		COPYTO=$OPTARG
+		;;
       *)
 		err "Unable to parse options correctly"
         show_usage
@@ -111,7 +117,7 @@ parse_options() {
 
   if [ "$SSH_HOST" != "" -a \
        "$SSH_PORT" != "" -a \
-       "$CODE"     != ""    \
+       "$CODE"     != "" -o "$COPYFROM" != "" -o "$COPYTO" != ""   \
   ]; then
     out "SSH_HOST  : '"$SSH_HOST"'"
     out "SSH_PORT  : '"$SSH_PORT"'"
@@ -136,44 +142,52 @@ futuregateway_service() {
 }
 
 update_code() {
-  futuregateway_service stop
-  case $CODE in
-    "fgAPIServer")
-      out "Updating APIServer front-end"
+  if [ "$CODE" != "" ]; then
+    futuregateway_service stop
+    case $CODE in
+      "fgAPIServer")
+        out "Updating APIServer front-end"
+        ;;
+      "APIServerDaemon")
+      out "Updating APIServer daemon"
+      # First make a backup of existing code in remote machine
+      TS=$(ts)
+      remote_exec "cd \$FGLOCATION/APIServerDaemon/ && tar cvfz ${TS}_src.tar.gz src/ && rm -rf src"
+      local_exec "scp -r -p -P$SSH_PORT $APISERVERDAEMON_HOME/src $FGUSER@$SSH_HOST:$FGLOCATION/APIServerDaemon/"
+      remote_exec "cd \$FGLOCATION/APIServerDaemon/ && ant all && cp \$FGLOCATION/APIServerDaemon/dist/APIServerDaemon.war \$CATALINA_HOME/webapps"
+      local_exec "scp -r -p -P$SSH_PORT $APISERVERDAEMON_HOME/web/WEB-INF/log4j.properties $FGUSER@$SSH_HOST:$FGLOCATION/APIServerDaemon//web/WEB-INF/"
+      local_exec "scp -r -p -P$SSH_PORT $APISERVERDAEMON_HOME/web/WEB-INF/web.xml $FGUSER@$SSH_HOST:$FGLOCATION/APIServerDaemon//web/WEB-INF/"
+      local_exec "scp -r -p -P$SSH_PORT $APISERVERDAEMON_HOME/web/WEB-INF/classes/it/infn/ct/APIServerDaemon.properties $FGUSER@$SSH_HOST:$FGLOCATION/APIServerDaemon/web/WEB-INF/classes/it/infn/ct/"
+      local_exec "scp -r -p -P$SSH_PORT $APISERVERDAEMON_HOME/web/WEB-INF/classes/it/infn/ct/GridEngineLogConfig.xml $FGUSER@$SSH_HOST:$FGLOCATION/APIServerDaemon/web/WEB-INF/classes/it/infn/ct/"
       ;;
-    "APIServerDaemon")
-    out "Updating APIServer daemon"
-    # First make a backup of existing code in remote machine
-    TS=$(ts)
-    remote_exec "cd \$FGLOCATION/APIServerDaemon/ && tar cvfz ${TS}_src.tar.gz src/ && rm -rf src"
-    local_exec "scp -r -p -P$SSH_PORT $APISERVERDAEMON_HOME/src $FGUSER@$SSH_HOST:$FGLOCATION/APIServerDaemon/"
-    remote_exec "cd \$FGLOCATION/APIServerDaemon/ && ant all && cp \$FGLOCATION/APIServerDaemon/dist/APIServerDaemon.war \$CATALINA_HOME/webapps"
-	local_exec "scp -r -p -P$SSH_PORT $APISERVERDAEMON_HOME/web/WEB-INF/log4j.properties $FGUSER@$SSH_HOST:$FGLOCATION/APIServerDaemon//web/WEB-INF/"
-	local_exec "scp -r -p -P$SSH_PORT $APISERVERDAEMON_HOME/web/WEB-INF/web.xml $FGUSER@$SSH_HOST:$FGLOCATION/APIServerDaemon//web/WEB-INF/"
-	local_exec "scp -r -p -P$SSH_PORT $APISERVERDAEMON_HOME/web/WEB-INF/classes/it/infn/ct/APIServerDaemon.properties $FGUSER@$SSH_HOST:$FGLOCATION/APIServerDaemon/web/WEB-INF/classes/it/infn/ct/"
-	local_exec "scp -r -p -P$SSH_PORT $APISERVERDAEMON_HOME/web/WEB-INF/classes/it/infn/ct/GridEngineLogConfig.xml $FGUSER@$SSH_HOST:$FGLOCATION/APIServerDaemon/web/WEB-INF/classes/it/infn/ct/"
-    ;;
-	"jsaga-adaptor-tosca")
-	TS=$(ts)
-    remote_exec "[ ! -d \$FGLOCATION/jsaga-adaptor-tosca ] && cd $FGLOCATION && git clone $TOSCAADAPTOR_GIT"
-	remote_exec "cd \$FGLOCATION/jsaga-adaptor-tosca/src/it/infn/ct/jsaga/adaptor/ && tar cfvz ${TS}_tosca.tar.gz tosca/ && rm -rf tosca"
-	local_exec "scp -r -p -P$SSH_PORT $TOSCAADAPTOR_HOME/src/it/infn/ct/jsaga/adaptor/tosca $FGUSER@$SSH_HOST:$FGLOCATION/jsaga-adaptor-tosca/src/it/infn/ct/jsaga/adaptor/"
-	remote_exec "cd \$FGLOCATION/jsaga-adaptor-tosca && ant all && cp \$FGLOCATION/jsaga-adaptor-tosca/dist/jsaga-adaptor-tosca.jar \$FGLOCATION/APIServerDaemon/web/WEB-INF/lib && cp \$FGLOCATION/jsaga-adaptor-tosca/dist/jsaga-adaptor-tosca.jar \$FGLOCATION/jsaga-1.1.2/lib"
-	remote_exec "cd \$FGLOCATION/APIServerDaemon/ && ant all && cp \$FGLOCATION/APIServerDaemon/dist/APIServerDaemon.war \$CATALINA_HOME/webapps"
-	;;
-    "jsaga-adaptor-rocci")
-    TS=$(ts)
-    remote_exec "[ ! -d \$FGLOCATION/jsaga-adaptor-rocci ] && cd $FGLOCATION && git clone $ROCCIADAPTOR_GIT" 
-    remote_exec "cd \$FGLOCATION/jsaga-adaptor-rocci/src/it/infn/ct/jsaga/adaptor/ && tar cfvz ${TS}_rocci.tar.gz rocci/ && rm -rf rocci"
-    local_exec "scp -r -p -P$SSH_PORT $ROCCIADAPTOR_HOME/src/it/infn/ct/jsaga/adaptor/rocci $FGUSER@$SSH_HOST:$FGLOCATION/jsaga-adaptor-rocci/src/it/infn/ct/jsaga/adaptor/"
-    remote_exec "cd \$FGLOCATION/jsaga-adaptor-rocci && ant all && cp \$FGLOCATION/jsaga-adaptor-rocci/dist/jsaga-adaptor-rocci.jar \$FGLOCATION/APIServerDaemon/web/WEB-INF/lib && cp \$FGLOCATION/jsaga-adaptor-rocci/dist/jsaga-adaptor-rocci.jar \$FGLOCATION/jsaga-1.1.2/lib"
-    remote_exec "cd \$FGLOCATION/APIServerDaemon/ && ant all && cp \$FGLOCATION/APIServerDaemon/dist/APIServerDaemon.war \$CATALINA_HOME/webapps"
-    ;;
-    *)
-      err "Unsupported code '"$CODE"'"
-  esac
+      "jsaga-adaptor-tosca")
+      TS=$(ts)
+      remote_exec "[ ! -d \$FGLOCATION/jsaga-adaptor-tosca ] && cd $FGLOCATION && git clone $TOSCAADAPTOR_GIT"
+      remote_exec "cd \$FGLOCATION/jsaga-adaptor-tosca/src/it/infn/ct/jsaga/adaptor/ && tar cfvz ${TS}_tosca.tar.gz tosca/ && rm -rf tosca"
+      local_exec "scp -r -p -P$SSH_PORT $TOSCAADAPTOR_HOME/src/it/infn/ct/jsaga/adaptor/tosca $FGUSER@$SSH_HOST:$FGLOCATION/jsaga-adaptor-tosca/src/it/infn/ct/jsaga/adaptor/"
+      remote_exec "cd \$FGLOCATION/jsaga-adaptor-tosca && ant all && cp \$FGLOCATION/jsaga-adaptor-tosca/dist/jsaga-adaptor-tosca.jar \$FGLOCATION/APIServerDaemon/web/WEB-INF/lib && cp \$FGLOCATION/jsaga-adaptor-tosca/dist/jsaga-adaptor-tosca.jar \$FGLOCATION/jsaga-1.1.2/lib"
+      remote_exec "cd \$FGLOCATION/APIServerDaemon/ && ant all && cp \$FGLOCATION/APIServerDaemon/dist/APIServerDaemon.war \$CATALINA_HOME/webapps"
+      ;;
+      "jsaga-adaptor-rocci")
+      TS=$(ts)
+      remote_exec "[ ! -d \$FGLOCATION/jsaga-adaptor-rocci ] && cd $FGLOCATION && git clone $ROCCIADAPTOR_GIT" 
+      remote_exec "cd \$FGLOCATION/jsaga-adaptor-rocci/src/it/infn/ct/jsaga/adaptor/ && tar cfvz ${TS}_rocci.tar.gz rocci/ && rm -rf rocci"
+      local_exec "scp -r -p -P$SSH_PORT $ROCCIADAPTOR_HOME/src/it/infn/ct/jsaga/adaptor/rocci $FGUSER@$SSH_HOST:$FGLOCATION/jsaga-adaptor-rocci/src/it/infn/ct/jsaga/adaptor/"
+      remote_exec "cd \$FGLOCATION/jsaga-adaptor-rocci && ant all && cp \$FGLOCATION/jsaga-adaptor-rocci/dist/jsaga-adaptor-rocci.jar \$FGLOCATION/APIServerDaemon/web/WEB-INF/lib && cp \$FGLOCATION/jsaga-adaptor-rocci/dist/jsaga-adaptor-rocci.jar \$FGLOCATION/jsaga-1.1.2/lib"
+      remote_exec "cd \$FGLOCATION/APIServerDaemon/ && ant all && cp \$FGLOCATION/APIServerDaemon/dist/APIServerDaemon.war \$CATALINA_HOME/webapps"
+      ;;
+      *)
+        err "Unsupported code '"$CODE"'"
+    esac
+  else
+    out "No code specified"
+  fi
   if [ $STARTFGSERVER -ne 0 ]; then
    futuregateway_service start
+  fi
+  if [ "$COPYFROM" != "" -a "$COPYTO" != "" ]; then
+    out "Copying '"$COPYFROM"' to '"$FGLOCATION"/"$COPYTO"'"
+    local_exec "scp -r -p -P$SSH_PORT $COPYFROM $FGUSER@$SSH_HOST:$FGLOCATION/$COPYTO"
   fi
 }
 
