@@ -157,22 +157,29 @@ sendproxy()  {
   return 0
 }
 
+init() {
+  OUT=$(mktemp)
+  ERR=$(mktemp)
+  PXY=$(mktemp)
+  STORED_PXYFILE=$STORED_PXYDIR/$(ts)
+}
+
 cleanup() {
   cat $OUT > $STORED_PXYFILE.out
   cat $ERR > $STORED_PXYFILE.err
-  rm -rf $OUT $ERR
+  rm -rf $OUT $ERR $PXY
 }
 
 #
 # Sending proxy ...
 #
-OUT=$(mktemp)
-ERR=$(mktemp)
-PXY=$HOME/pxy
-STORED_PXYFILE=$STORED_PXYDIR/$(ts)
+
+init
 
 storeproxydir && \
 getproxyfile  && \
-sendproxy     && \
+sendproxy
+
 cleanup
+
 
