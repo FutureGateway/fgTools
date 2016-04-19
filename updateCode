@@ -152,6 +152,13 @@ update_code() {
     case $CODE in
       "fgAPIServer")
         out "Updating APIServer front-end"
+        # First make a backup of existing code in remote machine
+		TS=$(ts)
+		remote_exec "cd \$FGLOCATION/fgAPIServer/ && tar cvfz ${TS}_fgapisrv.tar.gz *.py *.sql *.conf *.wsgi && rm -rf *.py *.pyc *.sql *.conf *.wsgi"
+        local_exec "scp -r -p -P$SSH_PORT $APISERVERFRONTEND_HOME/*.py $FGUSER@$SSH_HOST:$FGLOCATION/fgAPIServer/"
+        local_exec "scp -r -p -P$SSH_PORT $APISERVERFRONTEND_HOME/*.sql $FGUSER@$SSH_HOST:$FGLOCATION/fgAPIServer/"
+        local_exec "scp -r -p -P$SSH_PORT $APISERVERFRONTEND_HOME/*.conf $FGUSER@$SSH_HOST:$FGLOCATION/fgAPIServer/"
+        local_exec "scp -r -p -P$SSH_PORT $APISERVERFRONTEND_HOME/*.wsgi $FGUSER@$SSH_HOST:$FGLOCATION/fgAPIServer/"
         ;;
       "APIServerDaemon")
       out "Updating APIServer daemon"
