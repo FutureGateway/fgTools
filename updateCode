@@ -5,6 +5,7 @@
 FGUSER=futuregateway
 COPYFROM=
 COPYTO=
+UPLOADTO=
 APISERVERDAEMON_HOME=$HOME/Documents/APIServerDaemon
 APISERVERFRONTEND_HOME=$HOME/Documents/fgapiserver
 TOSCAADAPTOR_GIT="https://github.com/csgf/jsaga-adaptor-tosca"
@@ -37,7 +38,8 @@ usage: updateCode  -h <ip|host>                 # FutureGateway host
 					  |jsaga-adaptor-rocci>     # code: rOCCI adaptor
 					  |jsaga-adaptor-tosca> ]   # code: tosca adaptor
                   [ -f <file/directory path>    # Local file/dir to copy
-				   [-t <destination dir> ]  ]   # $FGLOCATION/<file/dir> 
+				   [-t <destination dir> ]  ]   # $FGLOCATION/<file/dir>
+                  [ -u <file/directory path> ]  # Upload file/dir from remote
                   [-s ]                         # Start futuregateway service
 
 
@@ -92,7 +94,7 @@ parse_options() {
   out "Parsing options and validating connection"
   SSH_PORT=22
   STARTFGSERVER=0
-  while getopts "h:p:c:sf:t:" opt >/dev/null 2>/dev/null
+  while getopts "h:p:c:sf:t:u:" opt >/dev/null 2>/dev/null
   do
     case $opt in
       h) 
@@ -113,6 +115,9 @@ parse_options() {
 	  t)
 		COPYTO=$OPTARG
 		;;
+      u)
+        UPLOADTO=$OPTARG
+        ;;
       *)
 		err "Unable to parse options correctly"
         show_usage
@@ -122,7 +127,7 @@ parse_options() {
 
   if [ "$SSH_HOST" != "" -a \
        "$SSH_PORT" != "" -a \
-       "$CODE"     != "" -o "$COPYFROM" != "" \
+       "$CODE"     != "" -o "$COPYFROM" != "" -o "$UPLOADTO" != ""\
   ]; then
     out "SSH_HOST  : '"$SSH_HOST"'"
     out "SSH_PORT  : '"$SSH_PORT"'"
@@ -174,7 +179,7 @@ update_code() {
       ;;
       "jsaga-adaptor-tosca")
       TS=$(ts)
-      remote_exec "[ ! -d \$FGLOCATION/jsaga-adaptor-tosca ] && cd $FGLOCATION && git clone $TOSCAADAPTOR_GIT"
+      remote_exec "[ ! -d \$FGLOCATION/jsaga-adaptor-tosca ] && cd $FGLOCATION && git clone $TOSCAADAPTOR_GIT && mv $FGLOCATION/jsaga-adaptor-tosca/build.xml $FGLOCATION/jsaga-adaptor-tosca/build.xml_nb && mv $FGLOCATION/jsaga-adaptor-tosca/build.xml_disabled $FGLOCATION/jsaga-adaptor-tosca/build.xml"
       remote_exec "cd \$FGLOCATION/jsaga-adaptor-tosca/src/it/infn/ct/jsaga/adaptor/ && tar cfvz ${TS}_tosca.tar.gz tosca/ && rm -rf tosca"
       local_exec "scp -r -p -P$SSH_PORT $TOSCAADAPTOR_HOME/src/it/infn/ct/jsaga/adaptor/tosca $FGUSER@$SSH_HOST:$FGLOCATION/jsaga-adaptor-tosca/src/it/infn/ct/jsaga/adaptor/"
       remote_exec "cd \$FGLOCATION/jsaga-adaptor-tosca && ant all && cp \$FGLOCATION/jsaga-adaptor-tosca/dist/jsaga-adaptor-tosca.jar \$FGLOCATION/APIServerDaemon/web/WEB-INF/lib && cp \$FGLOCATION/jsaga-adaptor-tosca/dist/jsaga-adaptor-tosca.jar \$FGLOCATION/jsaga-1.1.2/lib"
@@ -201,6 +206,10 @@ update_code() {
     out "Copying '"$COPYFROM"' to '"$FGLOCATION"/"$COPYTO"'"
     local_exec "scp -r -p -P$SSH_PORT $COPYFROM $FGUSER@$SSH_HOST:$FGLOCATION/$COPYTO"
   fi
+  if [ "$UPLOADTO" != "" ]; then
+    out "Uploading '"$FGLOCATION/$UPLOADTO"' to '"$(pwd)/$UPLOADTO"'"
+    local_exec "scp -r -p -P$SSH_PORT $COPYFROM $FGUSER@$SSH_HOST:$FGLOCATION/$UPLOADTO ."
+  fi 
 }
 
 successfully_accomplished() {
