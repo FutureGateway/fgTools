@@ -2,6 +2,8 @@
 #
 # updateCode - utility to update FutureGateway code on a given machine
 #
+HASSUDO=0 # 1 - In case futuregateway has a passwordless sudoer account
+FRONTENDSESSIONNAME=fgAPIServer
 FGUSER=futuregateway
 COPYFROM=
 COPYTO=
@@ -54,7 +56,7 @@ EOF
 
 remote_exec_run() {
 	OUT=$(mktemp)
-	ssh -q -t -p $SSH_PORT $FGUSER@$SSH_HOST "source ~/.bash_profile ; $*" >$OUT 2>/dev/null
+	ssh -q -p $SSH_PORT $FGUSER@$SSH_HOST "source ~/.bash_profile ; $*" >$OUT 2>/dev/null
 	dos2unix $OUT >/dev/null 2>/dev/null
 	cat $OUT
 	rm -f $OUT
@@ -63,7 +65,7 @@ remote_exec_run() {
 remote_exec() {
   OUT=$(mktemp)
   ERR=$(mktemp)
-  ssh -q -t -p $SSH_PORT $FGUSER@$SSH_HOST "source ~/.bash_profile ; $*" >$OUT 2>$ERR
+  ssh -q -p $SSH_PORT $FGUSER@$SSH_HOST "source ~/.bash_profile ; $*" >$OUT 2>$ERR
   dos2unix $OUT >/dev/null 2>/dev/null
   while read ln; do
     out "$ln"
@@ -148,11 +150,33 @@ parse_options() {
 }
 
 futuregateway_service() {
-  remote_exec "sudo service futuregateway $1" 
+  if [ $HASSUDO -ne 0 ]; then
+    remote_exec "sudo service futuregateway $1" 
+  else
+    case $1 in
+	  'start')
+          remote_exec "\
+screen -dmS $FRONTENDSESSIONNAME bash; sleep 5;\
+screen -S $FRONTENDSESSIONNAME -X stuff \"cd $FGLOCATION/fgAPIServer; ./fgapiserver.py\n\""
+          CATALINA_HOME=$(remote_exec_run "echo \$CATALINA_HOME")
+		  remote_exec "\
+source ~/.bash_profile;\
+source /lib/lsb/init-functions;\
+start_daemon $CATALINA_HOME/bin/startup.sh"
+		  ;;
+	  'stop')
+          remote_exec "screen -X -S $FRONTENDSESSIONNAME quit;"
+          remote_exec "stop_tomcat; sleep 1; killjava"
+		  ;;
+	  *)
+		  err "Unsupported futuregateway service command: $1"
+	esac
+  fi
 }
 
 update_code() {
   if [ "$CODE" != "" ]; then
+	out "Stopping futuregateway service"
     futuregateway_service stop
     case $CODE in
       "fgAPIServer")
@@ -200,6 +224,7 @@ update_code() {
     out "No code specified"
   fi
   if [ $STARTFGSERVER -ne 0 ]; then
+   out "Starting futuregateway service"
    futuregateway_service start
   fi
   if [ "$COPYFROM" != "" ]; then
