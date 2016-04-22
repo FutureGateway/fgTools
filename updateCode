@@ -2,6 +2,8 @@
 #
 # updateCode - utility to update FutureGateway code on a given machine
 #
+# Author: Riccardo Bruno <riccardo.bruno@ct.infn.it>
+#
 HASSUDO=0 # 1 - In case futuregateway has a passwordless sudoer account
 FRONTENDSESSIONNAME=fgAPIServer
 FGUSER=futuregateway
@@ -34,26 +36,23 @@ err() {
 
 show_usage() {
   cat <<EOF
-updateCode - utility to update FutureGateway code on a given machine
+  usage: updateCode  -h <ip|host>                # FutureGateway host
+                    [-p <ssh port>] (default 22) # FutureGateway ssh port
+                    [-c <fgAPIServer             # code: APIServer front-end
+                        |APIServerDaemon         # code: APIServerDaemon
+                        |jsaga-adaptor-rocci>    # code: rOCCI adaptor
+                        |jsaga-adaptor-tosca>]   # code: tosca adaptor
+                    [ -f <file/directory path>   # Local file/dir to copy
+                    [-t <destination dir> ]]     # /Users/Macbook/Documents/FutureGateway/<file/dir>
+                    [-u <file/directory path>]   # Upload file/dir from remote
+                    [-a]                         # Update all components
+                    [-s]                         # Start futuregateway service
 
-usage: updateCode  -h <ip|host>                # FutureGateway host
-                  [-p <ssh port>] (default 22) # FutureGateway ssh port
-                  [-c <fgAPIServer             # code: APIServer front-end
-				              |APIServerDaemon         # code: APIServerDaemon
-					            |jsaga-adaptor-rocci>    # code: rOCCI adaptor
-					            |jsaga-adaptor-tosca>]   # code: tosca adaptor
-                  [ -f <file/directory path>   # Local file/dir to copy
-				          [-t <destination dir> ]]     # $FGLOCATION/<file/dir>
-                  [-u <file/directory path>]   # Upload file/dir from remote
-				          [-a]                         # Update all components
-                  [-s]                         # Start futuregateway service
-
-
-This script copies the specified source package into remote host
-using ssh connection, for this reason is recommended to exchange
-ssh keys between source and destination host
-By default the script stops the futuregateway service unless the
-option -s is specified
+This script copies the specified source package into specified remote host
+using ssh connection, for this reason it is recommended to exchange the
+ssh keys between source and destination hosts
+By default the script stops the futuregateway service leaving it not running
+unless the the option -s is specified
 EOF
   exit 1
 }
@@ -98,6 +97,7 @@ local_exec() {
 
 parse_options() {
   out "Parsing options and validating connection"
+  SSH_HOST=
   SSH_PORT=22
   STARTFGSERVER=0
   while getopts "h:p:c:sf:t:u:a" opt >/dev/null 2>/dev/null
@@ -135,11 +135,10 @@ parse_options() {
   done
 
   if [ "$SSH_HOST" != "" -a \
-       "$SSH_PORT" != "" -a \
          "$CODE"      != "" -o \
          "$COPYFROM"  != "" -o \
          "$UPLOADTO"  != "" -o \
-         "$UPDATEALL" != ""\
+         "$UPDATEALL" -ne 0 \
   ]; then
     out "SSH_HOST  : '"$SSH_HOST"'"
     out "SSH_PORT  : '"$SSH_PORT"'"
