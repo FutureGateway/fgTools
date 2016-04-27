@@ -198,6 +198,7 @@ update_fgAPIServer() {
     out "Renewing APIServer front-end"
     remote_exec "mv \$FGLOCATION/fgAPIServer \$FGLOCATION/${TS}_fgAPIServer"
     remote_exec "cd $FGLOCATION && git clone $FGAPISERVER_GIT"
+	remote_exec "rm -rf \$FGLOCATION/fgAPIServer/apps && cp -r \$FGLOCATION/${TS}_fgAPIServer/apps \$FGLOCATION/fgAPIServer/"
   fi
 }
 
