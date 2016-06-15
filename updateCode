@@ -42,9 +42,9 @@ show_usage() {
                         |APIServerDaemon         # code: APIServerDaemon
                         |jsaga-adaptor-rocci>    # code: rOCCI adaptor
                         |jsaga-adaptor-tosca>]   # code: tosca adaptor
-                    [ -f <file/directory path>   # Local file/dir to copy
-                    [-t <destination dir> ]]     # /Users/Macbook/Documents/FutureGateway/<file/dir>
-                    [-u <file/directory path>]   # Upload file/dir from remote
+                    [ -f <file/directory path>   # Upload Local file/dir 
+                    [-t <destination dir> ]]     # \$FGLOCATION/<file/dir>
+                    [-u <file/directory path>]   # Download file/dir from remote
                     [-a]                         # Update all components
                     [-s]                         # Start futuregateway service
 
